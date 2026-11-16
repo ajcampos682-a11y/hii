@@ -1,0 +1,419 @@
+-- Claude Hub | Steal A Scooter | made 2026-11-16
+-- Remote names/arguments and instance paths were read from the client on PlaceVersion 297.
+local BUILD={date="2026-11-16",place=107344344488571,version=297}
+local Players=game:GetService("Players")
+local RS=game:GetService("ReplicatedStorage")
+local Run=game:GetService("RunService")
+local UIS=game:GetService("UserInputService")
+local LP=Players.LocalPlayer
+local env=(getgenv and getgenv()) or _G
+if env.ClaudeHub and env.ClaudeHub.Unload then pcall(env.ClaudeHub.Unload) end
+if game.PlaceId~=BUILD.place then warn("[ClaudeHub] wrong place, not loading") return "wrong place" end
+local versionOk=(game.PlaceVersion==BUILD.version)
+
+local alive=true
+local conns,resets={},{}
+local function on(sig,fn) local c=sig:Connect(fn) conns[#conns+1]=c return c end
+local S={minRank=1,speed=60,jump=50,flySpeed=80,alpha=0.1}
+-- rarity numbers copied from workspace attribute "ClaudeRarities" on v297
+local RANK={Basic=1,Common=1,Uncommon=2,SuperRare=2,Celestial=2,Rare=3,Epic=4,Legendary=5,Mythic=6,Mythical=6,BrainrotGod=6,Rainbow=6,Prismatic=6,Exclusive=7,Cosmic=7,Admin=7,Secret=8,Exotic=8,Eternal=9,Limited=9,Divine=10,Superior=10,Transcendent=10}
+local RARITY_STEPS={{"Common",1},{"Uncommon",2},{"Rare",3},{"Epic",4},{"Legendary",5},{"Mythic",6},{"Cosmic",7},{"Secret",8},{"Eternal",9},{"Divine",10}}
+local function rank(r) return RANK[r] or 0 end
+
+local function char() return LP.Character end
+local function root() local c=char() return c and c:FindFirstChild("HumanoidRootPart") end
+local function hum() local c=char() return c and c:FindFirstChildOfClass("Humanoid") end
+local function fire(name,...) local r=RS:FindFirstChild(name) if r and r:IsA("RemoteEvent") then r:FireServer(...) return true end return false end
+local function myPlot()
+  local plots=workspace:FindFirstChild("Plots") if not plots then return nil end
+  for _,p in ipairs(plots:GetChildren()) do if p:GetAttribute("Owner")==LP.UserId then return p end end
+  return nil
+end
+local function pivotOf(inst)
+  if not inst then return nil end
+  if inst:IsA("Model") or inst:IsA("BasePart") then return inst:GetPivot() end
+  local p=inst:FindFirstChildWhichIsA("BasePart",true)
+  return p and p.CFrame or nil
+end
+local function tp(cf) local c=char() if c and cf then c:PivotTo(cf) return true end return false end
+local function goHome()
+  local p=myPlot() if not p then return false end
+  local sp=p:FindFirstChild("SpawnPoint") or p:FindFirstChild("CenterPoint")
+  return sp and tp(sp.CFrame+Vector3.new(0,4,0)) or false
+end
+local function cash()
+  local ls=LP:FindFirstChild("leaderstats") local c=ls and ls:FindFirstChild("Cash")
+  return c and tonumber(c.Value) or nil
+end
+local function prompt(p)
+  if not (p and p:IsA("ProximityPrompt") and fireproximityprompt) then return false end
+  local hold=p.HoldDuration p.HoldDuration=0
+  local ok=pcall(fireproximityprompt,p)
+  p.HoldDuration=hold
+  return ok
+end
+
+local status
+local function say(t) if status then status.Text=t end end
+local busy=false
+local flyY=0
+
+-- ============ steal ============
+local function crates()
+  local t={} local r=root() local folder=workspace:FindFirstChild("NestEggs")
+  if not (r and folder) then return t end
+  for _,e in ipairs(folder:GetChildren()) do
+    local er=e:FindFirstChild("Root")
+    if er and e:FindFirstChild("StealPrompt",true) and rank(e:GetAttribute("Rarity"))>=S.minRank then
+      t[#t+1]={e=e,rk=rank(e:GetAttribute("Rarity")),d=(er.Position-r.Position).Magnitude}
+    end
+  end
+  table.sort(t,function(a,b) if a.rk~=b.rk then return a.rk>b.rk end return a.d<b.d end)
+  return t
+end
+local function stealOne(e)
+  local er=e:FindFirstChild("Root") local p=e:FindFirstChild("StealPrompt",true)
+  if not (er and p and root()) then return false end
+  say("Going to "..e.Name.." ["..tostring(e:GetAttribute("Rarity")).."]")
+  tp(er.CFrame+Vector3.new(0,4,0))
+  task.wait(0.4)
+  if not e.Parent then return false end
+  prompt(p)
+  local t0=os.clock()
+  while alive and os.clock()-t0<3 and LP:GetAttribute("CarryingEgg")~=true do task.wait(0.1) end
+  if LP:GetAttribute("CarryingEgg")~=true then say("Steal not accepted: "..e.Name) return false end
+  say("Carrying "..e.Name..", returning")
+  goHome()
+  t0=os.clock()
+  while alive and os.clock()-t0<8 and LP:GetAttribute("CarryingEgg")==true do task.wait(0.2) end
+  say(LP:GetAttribute("CarryingEgg")==true and "Still carrying after return" or ("Delivered "..e.Name))
+  return true
+end
+task.spawn(function()
+  while alive do
+    if S.autoSteal and root() then
+      local list=crates()
+      if #list>0 then busy=true pcall(stealOne,list[1].e) busy=false else say("No crates at this rarity") end
+      task.wait(0.6)
+    else task.wait(0.4) end
+  end
+end)
+
+-- ============ farm ============
+task.spawn(function()
+  local n=0
+  while alive do
+    n+=1
+    local plot=myPlot()
+    if S.autoHatch then fire("PetAction","HatchAll") end
+    if S.equipBest and n%5==0 then fire("PetAction","EquipBest") end
+    if plot then
+      local c=cash()
+      if S.upTread then local cost=plot:GetAttribute("TreadmillUpgradeCost") if not (c and cost) or c>=cost then fire("UpgradeTreadmill") end end
+      if S.upPen then local cost=plot:GetAttribute("PenUpgradeCost") if not (c and cost) or c>=cost then fire("UpgradePen") end end
+      if S.train and not busy then
+        local tm=plot:FindFirstChild("Treadmill") local tr=tm and tm:FindFirstChild("Root") local r=root()
+        if tr and r and (r.Position-tr.Position).Magnitude>5 then tp(tr.CFrame+Vector3.new(0,3.5,0)) end
+      end
+    end
+    task.wait(2)
+  end
+end)
+
+-- ============ events ============
+task.spawn(function()
+  local lastRace
+  while alive do
+    if S.autoClaim then
+      fire("GiftAction","Claim") fire("IndexAction","ClaimAll") fire("FuseAction","Collect")
+      fire("FrostAction","ClaimLogin") fire("FrostAction","ClaimAll")
+    end
+    if S.autoRace and workspace:GetAttribute("RaceState")=="Waiting" then
+      local id=workspace:GetAttribute("NextRace")
+      if id~=lastRace then lastRace=id fire("RaceAction","Join") end
+    end
+    task.wait(15)
+  end
+end)
+task.spawn(function()
+  while alive do
+    if S.pickups and not busy then
+      local r=root()
+      for _,fname in ipairs({"WingPickups","FrostPickups"}) do
+        local f=workspace:FindFirstChild(fname)
+        if f and r then
+          for _,d in ipairs(f:GetDescendants()) do
+            if d:IsA("ProximityPrompt") then prompt(d)
+            elseif d:IsA("BasePart") and firetouchinterest and d:FindFirstChildWhichIsA("TouchTransmitter") then
+              pcall(firetouchinterest,r,d,0) pcall(firetouchinterest,r,d,1)
+            end
+          end
+        end
+      end
+    end
+    task.wait(1)
+  end
+end)
+on(LP.Idled,function()
+  if not S.antiAfk then return end
+  local vu=game:GetService("VirtualUser") vu:CaptureController() vu:ClickButton2(Vector2.new())
+end)
+
+-- ============ movement ============
+on(Run.Heartbeat,function(dt)
+  local h,r=hum(),root() if not (h and r) then return end
+  if S.speedOn then h.WalkSpeed=S.speed end
+  if S.jumpOn then h.UseJumpPower=true h.JumpPower=S.jump end
+  if S.fly then
+    local cf=workspace.CurrentCamera.CFrame local d=Vector3.zero
+    if not UIS:GetFocusedTextBox() then
+      if UIS:IsKeyDown(Enum.KeyCode.W) then d+=cf.LookVector end
+      if UIS:IsKeyDown(Enum.KeyCode.S) then d-=cf.LookVector end
+      if UIS:IsKeyDown(Enum.KeyCode.D) then d+=cf.RightVector end
+      if UIS:IsKeyDown(Enum.KeyCode.A) then d-=cf.RightVector end
+      if UIS:IsKeyDown(Enum.KeyCode.Space) then d+=Vector3.yAxis end
+      if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then d-=Vector3.yAxis end
+    end
+    if d.Magnitude==0 then d=h.MoveDirection end
+    d+=Vector3.yAxis*flyY
+    local v=(d.Magnitude>0) and d.Unit*S.flySpeed or Vector3.zero
+    r.AssemblyLinearVelocity=v+Vector3.new(0,workspace.Gravity*dt,0)
+  end
+end)
+on(Run.Stepped,function()
+  if not S.noclip then return end
+  local c=char() if not c then return end
+  for _,p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") and p.CanCollide then p.CanCollide=false end end
+end)
+on(UIS.JumpRequest,function()
+  if S.infJump then local h=hum() if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end
+end)
+
+-- ============ gui ============
+local C={bg=Color3.fromRGB(48,22,9),side=Color3.fromRGB(32,14,6),panel=Color3.fromRGB(72,34,15),accent=Color3.fromRGB(217,119,87),accent2=Color3.fromRGB(176,82,46),text=Color3.fromRGB(245,238,226),dim=Color3.fromRGB(201,172,150)}
+local function new(cls,props,parent) local o=Instance.new(cls) for k,v in pairs(props) do o[k]=v end o.Parent=parent return o end
+local function corner(o,r) new("UICorner",{CornerRadius=UDim.new(0,r or 8)},o) end
+local gui=new("ScreenGui",{Name="ClaudeHub",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9999},(gethui and gethui()) or game:GetService("CoreGui"))
+local main=new("Frame",{Size=UDim2.fromOffset(590,390),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),BackgroundColor3=C.bg,BorderSizePixel=0,Active=true},gui) corner(main,12)
+new("UIStroke",{Color=C.accent,Thickness=1.5,Transparency=0.3},main)
+local tinted={main}
+local uiScale=new("UIScale",{},main)
+local function fit() local vp=workspace.CurrentCamera.ViewportSize uiScale.Scale=math.clamp(math.min(vp.X/640,vp.Y/420),0.55,1) end
+fit() on(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"),fit)
+local top=new("Frame",{Size=UDim2.new(1,0,0,40),BackgroundColor3=C.side,BorderSizePixel=0,Active=true},main) corner(top,12) tinted[#tinted+1]=top
+new("Frame",{Size=UDim2.fromOffset(10,10),Position=UDim2.fromOffset(14,15),BackgroundColor3=C.accent,BorderSizePixel=0},top).Rotation=45
+new("TextLabel",{Size=UDim2.new(1,-120,1,0),Position=UDim2.fromOffset(34,0),BackgroundTransparency=1,Text="Claude",Font=Enum.Font.GothamBold,TextSize=17,TextColor3=C.accent,TextXAlignment=Enum.TextXAlignment.Left},top)
+new("TextLabel",{Size=UDim2.new(1,-190,1,0),Position=UDim2.fromOffset(100,0),BackgroundTransparency=1,Text="Steal A Scooter",Font=Enum.Font.Gotham,TextSize=14,TextColor3=C.dim,TextXAlignment=Enum.TextXAlignment.Left},top)
+local close=new("TextButton",{Size=UDim2.fromOffset(26,26),Position=UDim2.new(1,-34,0,7),BackgroundColor3=C.panel,Text="-",Font=Enum.Font.GothamBold,TextSize=18,TextColor3=C.text,AutoButtonColor=false,BorderSizePixel=0},top) corner(close,6)
+local side=new("Frame",{Size=UDim2.new(0,132,1,-70),Position=UDim2.fromOffset(6,44),BackgroundColor3=C.side,BorderSizePixel=0},main) corner(side,10) tinted[#tinted+1]=side
+new("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center},side)
+new("UIPadding",{PaddingTop=UDim.new(0,8)},side)
+local footer=new("TextLabel",{Size=UDim2.new(1,-20,0,20),Position=UDim2.new(0,10,1,-23),BackgroundTransparency=1,Font=Enum.Font.Gotham,TextSize=12,TextColor3=versionOk and C.dim or Color3.fromRGB(255,120,90),TextXAlignment=Enum.TextXAlignment.Left,
+  Text="Claude  |  made "..BUILD.date..(versionOk and ("  |  game build v"..BUILD.version) or ("  |  built for v"..BUILD.version..", server is v"..game.PlaceVersion))},main)
+new("TextLabel",{Size=UDim2.new(0,160,0,20),Position=UDim2.new(1,-170,1,-23),BackgroundTransparency=1,Font=Enum.Font.Gotham,TextSize=12,TextColor3=C.dim,TextXAlignment=Enum.TextXAlignment.Right,Text=UIS.TouchEnabled and "Tap C to show/hide" or "RightShift: show/hide"},main)
+
+local pages,tabBtns={},{}
+local function selectTab(name) for n,p in pairs(pages) do p.Visible=(n==name) tabBtns[n].BackgroundColor3=(n==name) and C.accent2 or C.panel end end
+local function addTab(name)
+  local btn=new("TextButton",{Size=UDim2.new(1,-14,0,32),BackgroundColor3=C.panel,Text=name,TextColor3=C.text,Font=Enum.Font.GothamMedium,TextSize=14,AutoButtonColor=false,BorderSizePixel=0},side) corner(btn,8)
+  local page=new("ScrollingFrame",{Size=UDim2.new(1,-152,1,-74),Position=UDim2.fromOffset(144,46),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,ScrollBarImageColor3=C.accent,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,Visible=false},main)
+  new("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder},page)
+  pages[name]=page tabBtns[name]=btn
+  on(btn.MouseButton1Click,function() selectTab(name) end)
+  return page
+end
+local function row(page,h) local f=new("Frame",{Size=UDim2.new(1,-8,0,h or 34),BackgroundColor3=C.panel,BorderSizePixel=0},page) corner(f,8) tinted[#tinted+1]=f return f end
+local function text(parent,t,x,w) return new("TextLabel",{Size=w or UDim2.new(1,-80,0,34),Position=UDim2.fromOffset(x or 12,0),BackgroundTransparency=1,Text=t,Font=Enum.Font.Gotham,TextSize=14,TextColor3=C.text,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},parent) end
+local function toggle(page,label,key,cb)
+  local f=row(page) text(f,label)
+  local b=new("TextButton",{Size=UDim2.fromOffset(44,22),Position=UDim2.new(1,-54,0.5,-11),BackgroundColor3=C.side,Text="",AutoButtonColor=false,BorderSizePixel=0},f) corner(b,11)
+  local k=new("Frame",{Size=UDim2.fromOffset(18,18),Position=UDim2.fromOffset(2,2),BackgroundColor3=C.dim,BorderSizePixel=0},b) corner(k,9)
+  local function set(v)
+    S[key]=v b.BackgroundColor3=v and C.accent or C.side
+    k.Position=v and UDim2.fromOffset(24,2) or UDim2.fromOffset(2,2) k.BackgroundColor3=v and C.text or C.dim
+    if cb then task.spawn(cb,v) end
+  end
+  on(b.MouseButton1Click,function() set(not S[key]) end)
+  resets[#resets+1]=function() if S[key] then set(false) end end
+end
+local function slider(page,label,key,min,max,step,cb)
+  local f=row(page,48) local l=text(f,label,12,UDim2.new(1,-24,0,26))
+  local bar=new("TextButton",{Size=UDim2.new(1,-24,0,8),Position=UDim2.fromOffset(12,31),BackgroundColor3=C.side,Text="",AutoButtonColor=false,BorderSizePixel=0},f) corner(bar,4)
+  local fill=new("Frame",{Size=UDim2.fromScale(0,1),BackgroundColor3=C.accent,BorderSizePixel=0},bar) corner(fill,4)
+  local function set(v)
+    v=math.clamp(math.floor((v-min)/step+0.5)*step+min,min,max) S[key]=v
+    fill.Size=UDim2.fromScale((v-min)/(max-min),1)
+    l.Text=label..": "..((step<1) and string.format("%.2f",v) or tostring(v))
+    if cb then cb(v) end
+  end
+  local drag=false
+  local function fromX(x) set(min+(max-min)*math.clamp((x-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)) end
+  local function isPress(i) return i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch end
+  on(bar.InputBegan,function(i) if isPress(i) then drag=true fromX(i.Position.X) end end)
+  on(UIS.InputChanged,function(i) if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then fromX(i.Position.X) end end)
+  on(UIS.InputEnded,function(i) if isPress(i) then drag=false end end)
+  set(S[key] or min)
+end
+local function button(page,label,fn)
+  local b=new("TextButton",{Size=UDim2.new(1,-8,0,32),BackgroundColor3=C.accent2,Text=label,TextColor3=C.text,Font=Enum.Font.GothamMedium,TextSize=14,AutoButtonColor=true,BorderSizePixel=0},page) corner(b,8)
+  on(b.MouseButton1Click,function() task.spawn(fn,b) end)
+  return b
+end
+
+-- Farm
+local pFarm=addTab("Farm")
+toggle(pFarm,"Auto train on my treadmill","train")
+toggle(pFarm,"Auto upgrade treadmill","upTread")
+toggle(pFarm,"Auto upgrade pen","upPen")
+toggle(pFarm,"Auto hatch all crates","autoHatch")
+toggle(pFarm,"Auto equip best scooters","equipBest")
+toggle(pFarm,"Anti-AFK","antiAfk")
+
+-- Steal
+local pSteal=addTab("Steal")
+do local f=row(pSteal) status=text(f,"Idle",12,UDim2.new(1,-24,0,34)) status.TextColor3=C.dim end
+toggle(pSteal,"Auto steal crates (teleport, grab, return)","autoSteal",function(v) if not v then say("Idle") end end)
+do
+  local idx=1
+  button(pSteal,"Minimum rarity: Common",function(b)
+    idx=idx%#RARITY_STEPS+1 S.minRank=RARITY_STEPS[idx][2] b.Text="Minimum rarity: "..RARITY_STEPS[idx][1]
+  end)
+end
+button(pSteal,"Steal best crate once",function() if busy then return end local l=crates() if #l>0 then busy=true pcall(stealOne,l[1].e) busy=false else say("No crates at this rarity") end end)
+button(pSteal,"Drop held crate",function() fire("DropEgg") end)
+button(pSteal,"Return to my plot",function() goHome() end)
+
+-- ESP
+local pEsp=addTab("ESP")
+toggle(pEsp,"Crates (uses minimum rarity from Steal tab)","espCrates")
+toggle(pEsp,"Players","espPlayers")
+toggle(pEsp,"Chasers (waves)","espChasers")
+toggle(pEsp,"Scooters on plots","espScooters")
+local espFolder=new("Folder",{Name="ESP"},gui)
+local tags={}
+local function rankColor(rk) if rk>=8 then return Color3.fromRGB(255,95,160) elseif rk>=6 then return Color3.fromRGB(255,200,70) elseif rk>=4 then return Color3.fromRGB(190,140,255) end return C.text end
+local function tag(obj,adornee,label,color,hl)
+  local t=tags[obj]
+  if not t then
+    t={}
+    t.bb=new("BillboardGui",{Adornee=adornee,Size=UDim2.fromOffset(220,28),AlwaysOnTop=true,StudsOffset=Vector3.new(0,3.5,0),MaxDistance=100000},espFolder)
+    t.lbl=new("TextLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=13,TextStrokeTransparency=0.35,TextColor3=color},t.bb)
+    if hl then t.hl=new("Highlight",{Adornee=obj,FillColor=color,FillTransparency=0.75,OutlineColor=color},espFolder) end
+    tags[obj]=t
+  end
+  t.lbl.Text=label t.seen=true
+end
+task.spawn(function()
+  while alive do
+    for _,t in pairs(tags) do t.seen=false end
+    local r=root() local pos=r and r.Position or Vector3.zero
+    local function dist(p) return string.format("%dm",(p-pos).Magnitude) end
+    if S.espCrates then
+      local f=workspace:FindFirstChild("NestEggs")
+      for _,e in ipairs(f and f:GetChildren() or {}) do
+        local er=e:FindFirstChild("Root") local rk=rank(e:GetAttribute("Rarity"))
+        if er and rk>=S.minRank then tag(e,er,e.Name.." ["..tostring(e:GetAttribute("Rarity")).."] "..dist(er.Position),rankColor(rk),false) end
+      end
+    end
+    if S.espPlayers then
+      for _,pl in ipairs(Players:GetPlayers()) do
+        local c=pl.Character local hr=c and c:FindFirstChild("HumanoidRootPart")
+        if pl~=LP and hr then tag(c,hr,pl.Name..(pl:GetAttribute("CarryingEgg")==true and " (carrying) " or " ")..dist(hr.Position),C.accent,true) end
+      end
+    end
+    if S.espChasers then
+      local f=workspace:FindFirstChild("Waves")
+      for _,w in ipairs(f and f:GetChildren() or {}) do
+        local hb=w:FindFirstChild("Hitbox") or w:FindFirstChildWhichIsA("BasePart",true)
+        if hb then tag(w,hb,w.Name.." "..dist(hb.Position),Color3.fromRGB(255,70,60),false) end
+      end
+    end
+    if S.espScooters then
+      local f=workspace:FindFirstChild("Plots")
+      for _,p in ipairs(f and f:GetChildren() or {}) do
+        local items=p:FindFirstChild("Items")
+        for _,it in ipairs(items and items:GetChildren() or {}) do
+          local cf=it:IsA("Model") and it:HasTag("PlotPet") and it:FindFirstChildWhichIsA("BasePart",true)
+          if cf then tag(it,cf,it.Name.." ["..tostring(it:GetAttribute("Rarity")).."] $"..tostring(it:GetAttribute("Income")).."/s",rankColor(rank(it:GetAttribute("Rarity"))),false) end
+        end
+      end
+    end
+    for obj,t in pairs(tags) do
+      if not t.seen or not obj.Parent then t.bb:Destroy() if t.hl then t.hl:Destroy() end tags[obj]=nil end
+    end
+    task.wait(0.4)
+  end
+end)
+
+-- Movement
+local pMove=addTab("Movement")
+toggle(pMove,"Walk speed override","speedOn",function(v) if not v then local h=hum() if h then h.WalkSpeed=LP:GetAttribute("WalkSpeed") or 16 end end end)
+slider(pMove,"Walk speed","speed",16,2000,8)
+toggle(pMove,"Jump power override","jumpOn")
+slider(pMove,"Jump power","jump",50,300,5)
+toggle(pMove,"Infinite jump","infJump")
+local flyPad=new("Frame",{Size=UDim2.fromOffset(56,120),Position=UDim2.new(1,-70,0.5,-60),BackgroundTransparency=1,Visible=false},gui)
+for _,def in ipairs({{"Up",1,0},{"Dn",-1,64}}) do
+  local b=new("TextButton",{Size=UDim2.fromOffset(56,56),Position=UDim2.fromOffset(0,def[3]),BackgroundColor3=C.accent2,BackgroundTransparency=0.2,Text=def[1],TextColor3=C.text,Font=Enum.Font.GothamBold,TextSize=16,AutoButtonColor=false,BorderSizePixel=0},flyPad) corner(b,28)
+  local function isPress(i) return i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 end
+  on(b.InputBegan,function(i) if isPress(i) then flyY=def[2] end end)
+  on(b.InputEnded,function(i) if isPress(i) then flyY=0 end end)
+end
+toggle(pMove,"Fly (keys, or stick + Up/Dn on touch)","fly",function(v) flyY=0 flyPad.Visible=v and UIS.TouchEnabled end)
+slider(pMove,"Fly speed","flySpeed",20,400,10)
+toggle(pMove,"Noclip","noclip")
+
+-- Teleport
+local pTp=addTab("Teleport")
+button(pTp,"My plot",function() goHome() end)
+do
+  local function tpBtn(label,inst) button(pTp,label,function() local cf=pivotOf(inst) if cf then tp(cf+Vector3.new(0,6,0)) end end) end
+  local plots=workspace:FindFirstChild("Plots")
+  for i=1,5 do local p=plots and plots:FindFirstChild(tostring(i)) if p then tpBtn("Plot "..i,p:FindFirstChild("SpawnPoint") or p:FindFirstChild("CenterPoint") or p) end end
+  local shops=workspace:FindFirstChild("Shops")
+  for _,s in ipairs(shops and shops:GetChildren() or {}) do tpBtn("Shop: "..s.Name,s) end
+  for _,n in ipairs({"BlackMarket","RadioactiveCloudLobby","FlyingScooterStand","InvincibleScooterStand","EventBoard","World2","SpawnLocation"}) do
+    local inst=workspace:FindFirstChild(n) if inst then tpBtn(n,inst) end
+  end
+end
+
+-- Events
+local pEv=addTab("Events")
+toggle(pEv,"Auto claim gift / index / fuse / frost","autoClaim")
+toggle(pEv,"Auto join races","autoRace")
+toggle(pEv,"Collect wing and frost pickups","pickups")
+button(pEv,"Claim everything now",function() fire("GiftAction","Claim") fire("IndexAction","ClaimAll") fire("FuseAction","Collect") fire("FrostAction","ClaimLogin") fire("FrostAction","ClaimAll") end)
+button(pEv,"RSVP to event",function() fire("EventRSVP") end)
+
+-- Settings
+local pSet=addTab("Settings")
+slider(pSet,"Transparency","alpha",0,0.9,0.05,function(v) for _,f in ipairs(tinted) do f.BackgroundTransparency=v end end)
+do local f=row(pSet) text(f,"Made "..BUILD.date.." with Claude",12,UDim2.new(1,-24,0,34)).TextColor3=C.dim end
+do local f=row(pSet) text(f,"Measured on game build v"..BUILD.version.."; this server is v"..game.PlaceVersion,12,UDim2.new(1,-24,0,34)).TextColor3=C.dim end
+
+local function Unload()
+  alive=false
+  for _,r in ipairs(resets) do pcall(r) end
+  for _,c in ipairs(conns) do c:Disconnect() end
+  local h=hum() if h then h.WalkSpeed=LP:GetAttribute("WalkSpeed") or 16 end
+  gui:Destroy()
+  env.ClaudeHub=nil
+end
+button(pSet,"Unload",function() Unload() end)
+
+-- window drag + hide
+do
+  local drag,startPos,startInput
+  on(top.InputBegan,function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=true startPos=main.Position startInput=i.Position end end)
+  on(UIS.InputChanged,function(i) if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local d=i.Position-startInput main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
+  on(UIS.InputEnded,function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=false end end)
+end
+on(close.MouseButton1Click,function() main.Visible=false end)
+local fab=new("TextButton",{Size=UDim2.fromOffset(46,46),Position=UDim2.new(0.5,-23,0,8),BackgroundColor3=C.bg,Text="C",TextColor3=C.accent,Font=Enum.Font.GothamBold,TextSize=22,AutoButtonColor=false,BorderSizePixel=0},gui) corner(fab,23)
+new("UIStroke",{Color=C.accent,Thickness=1.5},fab)
+on(fab.MouseButton1Click,function() main.Visible=not main.Visible end)
+on(UIS.InputBegan,function(i,gp) if not gp and i.KeyCode==Enum.KeyCode.RightShift then main.Visible=not main.Visible end end)
+
+selectTab("Farm")
+env.ClaudeHub={Unload=Unload,State=S,Build=BUILD}
+return "loaded"
