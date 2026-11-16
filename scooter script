@@ -46,11 +46,14 @@ local function cash()
   return c and tonumber(c.Value) or nil
 end
 local function prompt(p)
-  if not (p and p:IsA("ProximityPrompt") and fireproximityprompt) then return false end
-  local hold=p.HoldDuration p.HoldDuration=0
-  local ok=pcall(fireproximityprompt,p)
-  p.HoldDuration=hold
-  return ok
+  if not (p and p:IsA("ProximityPrompt")) then return false end
+  if fireproximityprompt then
+    local hold=p.HoldDuration p.HoldDuration=0
+    local ok=pcall(fireproximityprompt,p)
+    p.HoldDuration=hold
+    if ok then return true end
+  end
+  return (pcall(function() p:InputHoldBegin() task.wait(p.HoldDuration+0.1) p:InputHoldEnd() end))
 end
 
 local status
@@ -144,8 +147,8 @@ task.spawn(function()
         if f and r then
           for _,d in ipairs(f:GetDescendants()) do
             if d:IsA("ProximityPrompt") then prompt(d)
-            elseif d:IsA("BasePart") and firetouchinterest and d:FindFirstChildWhichIsA("TouchTransmitter") then
-              pcall(firetouchinterest,r,d,0) pcall(firetouchinterest,r,d,1)
+            elseif d:IsA("BasePart") and d:FindFirstChildWhichIsA("TouchTransmitter") then
+              if firetouchinterest then pcall(firetouchinterest,r,d,0) pcall(firetouchinterest,r,d,1) else tp(d.CFrame) task.wait(0.15) end
             end
           end
         end
@@ -156,7 +159,7 @@ task.spawn(function()
 end)
 on(LP.Idled,function()
   if not S.antiAfk then return end
-  local vu=game:GetService("VirtualUser") vu:CaptureController() vu:ClickButton2(Vector2.new())
+  pcall(function() local vu=game:GetService("VirtualUser") vu:CaptureController() vu:ClickButton2(Vector2.new()) end)
 end)
 
 -- ============ movement ============
@@ -192,8 +195,14 @@ end)
 -- ============ gui ============
 local C={bg=Color3.fromRGB(48,22,9),side=Color3.fromRGB(32,14,6),panel=Color3.fromRGB(72,34,15),accent=Color3.fromRGB(217,119,87),accent2=Color3.fromRGB(176,82,46),text=Color3.fromRGB(245,238,226),dim=Color3.fromRGB(201,172,150)}
 local function new(cls,props,parent) local o=Instance.new(cls) for k,v in pairs(props) do o[k]=v end o.Parent=parent return o end
+local function guiParent()
+  if gethui then local ok,h=pcall(gethui) if ok and typeof(h)=="Instance" then return h end end
+  local ok,cg=pcall(function() local c=game:GetService("CoreGui") local probe=Instance.new("Folder") probe.Parent=c probe:Destroy() return c end)
+  if ok and cg then return cg end
+  return LP:WaitForChild("PlayerGui")
+end
 local function corner(o,r) new("UICorner",{CornerRadius=UDim.new(0,r or 8)},o) end
-local gui=new("ScreenGui",{Name="ClaudeHub",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9999},(gethui and gethui()) or game:GetService("CoreGui"))
+local gui=new("ScreenGui",{Name="ClaudeHub",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9999},guiParent())
 local main=new("Frame",{Size=UDim2.fromOffset(590,390),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),BackgroundColor3=C.bg,BorderSizePixel=0,Active=true},gui) corner(main,12)
 new("UIStroke",{Color=C.accent,Thickness=1.5,Transparency=0.3},main)
 local tinted={main}
@@ -391,6 +400,10 @@ slider(pSet,"Transparency","alpha",0,0.9,0.05,function(v) for _,f in ipairs(tint
 do local f=row(pSet) text(f,"Made "..BUILD.date.." with Claude",12,UDim2.new(1,-24,0,34)).TextColor3=C.dim end
 do local f=row(pSet) text(f,"Measured on game build v"..BUILD.version.."; this server is v"..game.PlaceVersion,12,UDim2.new(1,-24,0,34)).TextColor3=C.dim end
 
+do
+  local name="unknown" if identifyexecutor then local ok,n=pcall(identifyexecutor) if ok and n then name=tostring(n) end end
+  local f=row(pSet) text(f,"Executor: "..name.."  |  prompts: "..(fireproximityprompt and "native" or "fallback").."  |  touch: "..(firetouchinterest and "native" or "fallback"),12,UDim2.new(1,-24,0,34)).TextColor3=C.dim
+end
 local function Unload()
   alive=false
   for _,r in ipairs(resets) do pcall(r) end
